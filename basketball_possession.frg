@@ -21,8 +21,12 @@ sig State {
     scoreB: one Int,
     possession: one Team,
     shotClock: one Int,
-    event: lone EventType,
-    next: lone State
+    event: lone EventType
+}
+
+one sig Game {
+    firstState: one State,
+    next: pfunc State -> State
 }
 
 // Structural constraints
@@ -38,17 +42,21 @@ pred wellformed {
         s.shotClock >= 0
         s.shotClock <= 24
     }
+    
+    // First state has no predecessor
+    no prev: State | Game.next[prev] = Game.firstState
+}
 
-    // States are linear with at most one successor
-    all s: State | lone s.next
-
-    // No self loops of states
-    all s: State | s.next != s
+// Initialize the state
+pred init[s: State] {
+    s.scoreA = 0
+    s.scoreB = 0
+    s.shotClock = 24
 }
 
 // State transition rules
 pred validTransition[s1, s2: State] {
-    some s1.event
+    one s1.event
 
     // Score a 2 pointer
     (s1.event = ShotMade2) => {
@@ -133,33 +141,26 @@ pred validTransition[s1, s2: State] {
     }
 }
 
-// Ensure states have valid transitions
-pred transitions {
-    all s: State | {
-        some s.next => validTransition[s, s.next]
-    }
-}
+// Trace constraints
+pred traces {
+    wellformed
+    init[Game.firstState]
 
-// A team needs to have had a possession at some point to have a score greater than 0
-pred noScoreWithoutPossession {
-    all s: State | {
-        s.scoreA > 0 => (some t: State | t.possession = TeamA)
-        s.scoreB > 0 => (some t: State | t.possession = TeamB)
-    }
+    all s: State | some Game.next[s] implies validTransition[s, Game.next[s]]
 }
-
 
 // If the score changes, there needs to be a ShotMade event
 pred scoreOnlyOnMadeShot {
-    all s1: State | some s1.next => {
-        let s2 = s1.next | (s2.scoreA != s1.scoreA or s2.scoreB != s1.scoreB) =>
-            s1.event = ShotMade2 or s1.event = ShotMade3
+    traces implies {
+        all s1: State | some Game.next[s1] implies {
+            let s2 = Game.next[s1] | (s2.scoreA != s1.scoreA or s2.scoreB != s1.scoreB)
+                => (s1.event = ShotMade2 or s1.event = ShotMade3)
+        }
     }
 }
 
 // Run command
 run {
-    wellformed
-    transitions
+    traces
     scoreOnlyOnMadeShot
-} for 5 State, 6 Int
+} for 5 State, 6 Int for { next is linear }
