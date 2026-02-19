@@ -5,16 +5,12 @@ option run_sterling "layout.cnd"
 
 // NBA Possession & Scoring Consistency Model
 
-// Boolean encodings
-abstract sig Boolean {}
-one sig True, False extends Boolean {}
-
 // Basic game structure
 abstract sig Team {}
 one sig TeamA, TeamB extends Team {}
 
 abstract sig EventType {}
-one sig ShotMade2, ShotMade3, ShotMissed, Turnover, Foul, OffensiveRebound, DefensiveRebound extends EventType {}
+one sig ShotMade2, ShotMade3, ShotMissed, Turnover, Foul, OffensiveRebound, DefensiveRebound, ShotClockViolation, GameEnd extends EventType {}
 
 sig State {
     scoreA: one Int,
@@ -31,14 +27,10 @@ one sig Game {
 
 // Structural constraints
 pred wellformed {
-    // Scores can never be negative
+    // Scores can never be negative, and NBA shot clocks are always between 0 and 24 seconds
     all s: State | {
         s.scoreA >= 0
         s.scoreB >= 0
-    }
-
-    // NBA shot clocks are always between 0 and 24 seconds
-    all s: State | {
         s.shotClock >= 0
         s.shotClock <= 24
     }
@@ -52,6 +44,11 @@ pred init[s: State] {
     s.scoreA = 0
     s.scoreB = 0
     s.shotClock = 24
+
+    // The game cannot start in one of the following states
+    s.event != OffensiveRebound
+    s.event != DefensiveRebound
+    s.event != ShotClockViolation
 }
 
 // State transition rules
@@ -100,6 +97,8 @@ pred validTransition[s1, s2: State] {
     (s1.event = ShotMissed) => {
         s2.scoreA = s1.scoreA
         s2.scoreB = s1.scoreB
+        s2.possession = s1.possession
+        s2.shotClock = subtract[s1.shotClock, 1]
     }
 
     // If turnover, scores don't change, but possession changes and shot clock resets
@@ -139,28 +138,53 @@ pred validTransition[s1, s2: State] {
         s2.possession != s1.possession
         s2.shotClock = 24
     }
+
+    // Shot clock violation (clock reaches 0) flips the possession
+    (s1.event = ShotClockViolation) => {
+        s1.shotClock = 0
+        s2.scoreA = s1.scoreA
+        s2.scoreB = s1.scoreB
+        s2.possession != s1.possession
+        s2.shotClock = 24
+    }
+}
+
+// Ensure game flows smoothly and realistically
+pred gameFlow {
+    all s: State | {
+        // A Violation can ONLY exist if the clock is 0
+        (s.event = ShotClockViolation) <=> (s.shotClock = 0)
+        
+        // Rebounds MUST be preceded by a missed shot
+        (s.event = OffensiveRebound or s.event = DefensiveRebound) implies {
+            some prev: State | Game.next[prev] = s and prev.event = ShotMissed
+        }
+        
+        // Missed shots MUST be followed by a rebound
+        (s.event = ShotMissed) implies {
+            some nxt: State | Game.next[s] = nxt and (nxt.event = OffensiveRebound or nxt.event = DefensiveRebound)
+        }
+
+        // If the score changes, there needs to be a ShotMade event
+        (some prev: State | Game.next[prev] = s and (s.scoreA != prev.scoreA or s.scoreB != prev.scoreB)) implies {
+            all prev: State | Game.next[prev] = s implies (prev.event = ShotMade2 or prev.event = ShotMade3)
+        }
+
+        // If there is no next state, the game ends
+        (no Game.next[s]) <=> s.event = GameEnd
+    }
 }
 
 // Trace constraints
 pred traces {
     wellformed
     init[Game.firstState]
-
     all s: State | some Game.next[s] implies validTransition[s, Game.next[s]]
+    gameFlow
 }
 
-// If the score changes, there needs to be a ShotMade event
-pred scoreOnlyOnMadeShot {
-    traces implies {
-        all s1: State | some Game.next[s1] implies {
-            let s2 = Game.next[s1] | (s2.scoreA != s1.scoreA or s2.scoreB != s1.scoreB)
-                => (s1.event = ShotMade2 or s1.event = ShotMade3)
-        }
-    }
-}
 
 // Run command
 run {
     traces
-    scoreOnlyOnMadeShot
 } for 5 State, 6 Int for { next is linear }
