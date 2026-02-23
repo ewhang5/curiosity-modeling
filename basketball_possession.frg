@@ -175,16 +175,19 @@ pred gameFlow {
     }
 }
 
-// Trace constraints
+// This is the traces predicate which ensures that a game can be run properly with all the previously defined predicates
 pred traces {
+    // calls the wellformed predicate 
     wellformed
+    // calls the init predicate on the first state of the game 
     init[Game.firstState]
+    // for all states, there is some valid transition that takes place from one state to another 
     all s: State | some Game.next[s] implies validTransition[s, Game.next[s]]
+    // finally calls the game flow predicate 
     gameFlow
 }
 
-
-// Run command
+// this is the run command which calls traces for 5 states and 6 Ints. It also uses the next is linaer logic
 run {
     traces
 } for 5 State, 6 Int for { next is linear }
