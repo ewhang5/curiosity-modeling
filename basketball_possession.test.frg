@@ -131,7 +131,7 @@ test suite for init {
     invalid_start2: assert {some initState: State | init[initState] and initState.event = DefensiveRebound} is unsat for 5 State, 6 Int
     // this test ensures that the game does not start on an ShotClockViolation
     invalid_start3: assert {some initState: State | init[initState] and initState.event = ShotClockViolation} is unsat for 5 State, 6 Int
-    // these test prove that the game can start on vali events that are not shot clock violations or rebounds
+    // these test prove that the game can start on valid events that are not shot clock violations or rebounds
     valid_init1: assert {some initState: State | init[initState] and initState.event = Foul} is sat for 5 State, 6 Int
     valid_init2: assert {some initState: State | init[initState] and initState.event = ShotMissed} is sat for 5 State, 6 Int
     valid_init3: assert {some initState: State | init[initState] and initState.event = Turnover} is sat for 5 State, 6 Int
